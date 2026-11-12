@@ -134,7 +134,7 @@ async def run():
     now = datetime.now(TZ)
     bot = Bot(token=token)
 
-        log.info("Получаю браузерную сессию ДТЭК")
+    log.info("Получаю браузерную сессию ДТЭК")
     cookies, csrf_token = await get_cleared_cookies(SCHEDULE_URL)
 
     headers = {
@@ -157,7 +157,7 @@ async def run():
         impersonate="chrome120",
     )
 
-        async with DtekClient("oem", ajax_url=AJAX_URL, session=session) as client:
+    async with DtekClient("oem", ajax_url=AJAX_URL, session=session) as client:
         # Read all houses for the street so we can inspect the house's live flag.
         response = await client.get_home_num(CITY, STREET)
         house_key, entry = find_house_entry(response)
