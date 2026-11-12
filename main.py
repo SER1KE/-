@@ -1,9 +1,10 @@
+
 import asyncio
 import json
 import logging
 import os
 import re
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -18,6 +19,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger("dtek-notifier")
 
 STATE_PATH = Path("state.json")
+TZ = ZoneInfo(TIMEZONE)
+
 BASE_URL = "https://www.dtek-oem.com.ua"
 SCHEDULE_URL = f"{BASE_URL}/ua/shutdowns"
 AJAX_URL = f"{BASE_URL}/ua/ajax"
@@ -104,8 +107,12 @@ def slot_start(key, now):
     text = str(key)
     match = re.search(r"(?<!\d)([01]?\d|2[0-3]):([0-5]\d)", text)
     if match:
-        return now.replace(hour=int(match.group(1)), minute=int(match.group(2)),
-                           second=0, microsecond=0)
+        return now.replace(
+            hour=int(match.group(1)),
+            minute=int(match.group(2)),
+            second=0,
+            microsecond=0,
+        )
     if text.isdigit():
         index = int(text)
         if 0 <= index <= 47:
@@ -127,12 +134,14 @@ async def send_message(bot, chat_id, text):
 async def run():
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+
     if not token or not chat_id:
-        raise RuntimeError("Не заданы TELEGRAM_BOT_TOKEN и/или TELEGRAM_CHAT_ID в GitHub Secrets")
+        raise RuntimeError(
+            "Не заданы TELEGRAM_BOT_TOKEN и/или TELEGRAM_CHAT_ID в GitHub Secrets"
+        )
 
     state = load_state()
     now = datetime.now(TZ)
-    bot = Bot(token=token)
 
     log.info("Получаю браузерную сессию ДТЭК")
     cookies, csrf_token = await get_cleared_cookies(SCHEDULE_URL)
@@ -157,83 +166,122 @@ async def run():
         impersonate="chrome120",
     )
 
-    async with DtekClient("oem", ajax_url=AJAX_URL, session=session) as client:
-        # Read all houses for the street so we can inspect the house's live flag.
-        response = await client.get_home_num(CITY, STREET)
-        house_key, entry = find_house_entry(response)
-        if entry is None:
-            raise RuntimeError(
-                f"Дом {HOUSE_NUMBER} не найден в данных ДТЭК для {STREET}. "
-                "Не отправляю уведомления, чтобы не отслеживать чужой адрес."
+    bot = Bot(token=token)
+
+    try:
+        await bot.initialize()
+
+        async with DtekClient(
+            "oem",
+            ajax_url=AJAX_URL,
+            session=session,
+        ) as client:
+
+            # Read all houses for the street so we can inspect the house's live flag.
+            response = await client.get_home_num(CITY, STREET)
+            house_key, entry = find_house_entry(response)
+
+            if entry is None:
+                raise RuntimeError(
+                    f"Дом {HOUSE_NUMBER} не найден в данных ДТЭК для {STREET}. "
+                    "Не отправляю уведомления, чтобы не отслеживать чужой адрес."
+                )
+
+            group = get_group(entry)
+
+            log.info(
+                "ДТЭК: дом=%s, группа=%s, ожидаемая=%s",
+                house_key,
+                group,
+                EXPECTED_GROUP,
             )
 
-        group = get_group(entry)
-        log.info("ДТЭК: дом=%s, группа=%s, ожидаемая=%s", house_key, group, EXPECTED_GROUP)
-        if group and EXPECTED_GROUP not in group:
-            raise RuntimeError(
-                f"ДТЭК показывает для дома группу {group}, а настроена {EXPECTED_GROUP}. "
-                "Проверьте адрес/корпус/очередь."
-            )
+            if group and EXPECTED_GROUP not in group:
+                raise RuntimeError(
+                    f"ДТЭК показывает для дома группу {group}, а настроена {EXPECTED_GROUP}. "
+                    "Проверьте адрес/корпус/очередь."
+                )
 
-        # Emergency/restoration messages only on an explicit boolean state.
-        current = has_current_outage(entry)
-        previous = state.get("emergency_active")
-        if current is True and previous is not True:
-            await send_message(
-                bot, chat_id,
-                f"🚨 ДТЭК сообщает об отключении электричества.\n"
-                f"Адрес: Одесса, Щоглова, 20/1\nОчередь: {EXPECTED_GROUP}\n"
-                f"Время обнаружения: {now:%d.%m.%Y %H:%M}"
-            )
-            state["emergency_active"] = True
-        elif current is False and previous is True:
-            await send_message(
-                bot, chat_id,
-                f"💡 ДТЭК больше не показывает активное аварийное отключение.\n"
-                f"Адрес: Одесса, Щоглова, 20/1\n"
-                f"Время обнаружения восстановления: {now:%d.%m.%Y %H:%M}"
-            )
-            state["emergency_active"] = False
-        elif current is not None and previous is None:
-            # Baseline only: do not send a false "restored" alert on first run.
-            state["emergency_active"] = current
+            # Emergency/restoration messages only on an explicit boolean state.
+            current = has_current_outage(entry)
+            previous = state.get("emergency_active")
 
-        slots = await get_slots_for_today(client)
-        if slots:
-            for key, status in slots.items():
-                if not slot_is_outage(status):
+            if current is True and previous is not True:
+                await send_message(
+                    bot,
+                    chat_id,
+                    f"🚨 ДТЭК сообщает об отключении электричества.\n"
+                    f"Адрес: Одесса, Щоглова, 20/1\nОчередь: {EXPECTED_GROUP}\n"
+                    f"Время обнаружения: {now:%d.%m.%Y %H:%M}",
+                )
+                state["emergency_active"] = True
+
+            elif current is False and previous is True:
+                await send_message(
+                    bot,
+                    chat_id,
+                    f"💡 ДТЭК больше не показывает активное аварийное отключение.\n"
+                    f"Адрес: Одесса, Щоглова, 20/1\n"
+                    f"Время обнаружения восстановления: {now:%d.%m.%Y %H:%M}",
+                )
+                state["emergency_active"] = False
+
+            elif current is not None and previous is None:
+                # Baseline only: do not send a false "restored" alert on first run.
+                state["emergency_active"] = current
+
+            slots = await get_slots_for_today(client)
+
+            if slots:
+                for key, status in slots.items():
+                    if not slot_is_outage(status):
+                        continue
+
+                    start = slot_start(key, now)
+
+                    if start is None:
+                        log.warning(
+                            "Не распознал время слота %r; пропускаю предупреждение",
+                            key,
+                        )
+                        continue
+
+                    if start.date() != now.date():
+                        continue
+
+                    minutes = (start - now).total_seconds() / 60
+                    event_id = f"{start.isoformat()}|{EXPECTED_GROUP}"
+
+                    if 0 < minutes <= WARNING_MINUTES and event_id not in state["warned"]:
+                        await send_message(
+                            bot,
+                            chat_id,
+                            f"⚠️ Плановое отключение по графику ДТЭК примерно через {round(minutes)} мин.\n"
+                            f"Адрес: Одесса, Щоглова, 20/1\nОчередь: {EXPECTED_GROUP}\n"
+                            f"Начало: {start:%H:%M}\n"
+                            "График может измениться.",
+                        )
+                        state["warned"].append(event_id)
+
+            # Keep state bounded to the recent past/future.
+            cutoff = now - timedelta(days=2)
+            kept = []
+
+            for item in state["warned"]:
+                try:
+                    stamp = datetime.fromisoformat(item.split("|", 1)[0])
+                    if stamp >= cutoff:
+                        kept.append(item)
+                except ValueError:
                     continue
-                start = slot_start(key, now)
-                if start is None:
-                    log.warning("Не распознал время слота %r; пропускаю предупреждение", key)
-                    continue
-                if start.date() != now.date():
-                    continue
-                minutes = (start - now).total_seconds() / 60
-                event_id = f"{start.isoformat()}|{EXPECTED_GROUP}"
-                if 0 < minutes <= WARNING_MINUTES and event_id not in state["warned"]:
-                    await send_message(
-                        bot, chat_id,
-                        f"⚠️ Плановое отключение по графику ДТЭК примерно через {round(minutes)} мин.\n"
-                        f"Адрес: Одесса, Щоглова, 20/1\nОчередь: {EXPECTED_GROUP}\n"
-                        f"Начало: {start:%H:%M}\n"
-                        "График может измениться."
-                    )
-                    state["warned"].append(event_id)
 
-        # Keep state bounded to the recent past/future.
-        cutoff = now - timedelta(days=2)
-        kept = []
-        for item in state["warned"]:
-            try:
-                stamp = datetime.fromisoformat(item.split("|", 1)[0])
-                if stamp >= cutoff:
-                    kept.append(item)
-            except ValueError:
-                continue
-        state["warned"] = kept[-200:]
-        state["initialized"] = True
-        save_state(state)
+            state["warned"] = kept[-200:]
+            state["initialized"] = True
+            save_state(state)
+
+    finally:
+        await session.close()
+        await bot.shutdown()
 
 
 if __name__ == "__main__":
