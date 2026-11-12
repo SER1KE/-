@@ -237,10 +237,10 @@ async def run():
                 state["emergency_active"] = current
 
             log.info("ДТЭК: получено слотов расписания: %s", len(slots) if slots else 0)
-log.info(
-    "ДТЭК: расписание: %s",
-    {str(k): str(getattr(v, "value", v)) for k, v in (slots or {}).items()}
-)
+            log.info(
+                "ДТЭК: расписание: %s",
+                {str(k): str(getattr(v, "value", v)) for k, v in (slots or {}).items()}
+            )
 
             if slots:
                 for key, status in slots.items():
