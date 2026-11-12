@@ -192,6 +192,7 @@ async def run():
                 )
 
             group = get_group(entry)
+            current = has_current_outage(entry)
 
             log.info(
                 "ДТЭК: дом=%s, группа=%s, ожидаемая=%s",
@@ -208,6 +209,7 @@ async def run():
 
             # Emergency/restoration messages only on an explicit boolean state.
             log.info("ДТЭК: текущее аварийное состояние: %s", current)
+            slots = await get_slots_for_today(client)
             previous = state.get("emergency_active")
 
             if current is True and previous is not True:
