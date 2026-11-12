@@ -125,6 +125,26 @@ def get_slots_for_today(client):
     # of time-slot keys to SlotStatus values.
     return client.get_today_schedule(CITY, STREET, HOUSE_NUMBER)
 
+def get_outage_intervals(slots, now):
+    """Объединяет последовательные 30-минутные интервалы отключения."""
+    starts = sorted({
+        start
+        for key, status in (slots or {}).items()
+        if slot_is_outage(status)
+        for start in [slot_start(key, now)]
+        if start is not None and start.date() == now.date()
+    })
+
+    intervals = []
+    for start in starts:
+        end = start + timedelta(minutes=30)
+        if intervals and start == intervals[-1][1]:
+            intervals[-1] = (intervals[-1][0], end)
+        else:
+            intervals.append((start, end))
+
+    return intervals
+
 
 async def send_message(bot, chat_id, text):
     await bot.send_message(chat_id=chat_id, text=text)
@@ -243,22 +263,9 @@ async def run():
             )
 
             if slots:
-                for key, status in slots.items():
-                    if not slot_is_outage(status):
-                        continue
+                intervals = get_outage_intervals(slots, now)
 
-                    start = slot_start(key, now)
-
-                    if start is None:
-                        log.warning(
-                            "Не распознал время слота %r; пропускаю предупреждение",
-                            key,
-                        )
-                        continue
-
-                    if start.date() != now.date():
-                        continue
-
+                for start, end in intervals:
                     minutes = (start - now).total_seconds() / 60
                     event_id = f"{start.isoformat()}|{EXPECTED_GROUP}"
 
@@ -268,7 +275,8 @@ async def run():
                             chat_id,
                             f"⚠️ Плановое отключение по графику ДТЭК примерно через {round(minutes)} мин.\n"
                             f"Адрес: Одесса, Щоглова, 20/1\nОчередь: {EXPECTED_GROUP}\n"
-                            f"Начало: {start:%H:%M}\n"
+                            f"🔴 Отключат: {start:%H:%M}\n"
+                            f"🟢 Включат ориентировочно: {end:%H:%M}\n"
                             "График может измениться.",
                         )
                         state["warned"].append(event_id)
