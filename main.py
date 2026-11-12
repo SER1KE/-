@@ -1,3 +1,4 @@
+
 import asyncio
 import json
 import logging
@@ -27,7 +28,12 @@ AJAX_URL = f"{BASE_URL}/ua/ajax"
 
 def load_state():
     if not STATE_PATH.exists():
-        return {"warned": [], "emergency_active": None, "initialized": False, "last_update_id": 0}
+        return {
+            "warned": [],
+            "emergency_active": None,
+            "initialized": False,
+            "last_update_id": 0,
+        }
     try:
         data = json.loads(STATE_PATH.read_text(encoding="utf-8"))
         data.setdefault("warned", [])
@@ -37,7 +43,12 @@ def load_state():
         return data
     except (OSError, json.JSONDecodeError):
         log.exception("Не удалось прочитать state.json; создаю новое состояние")
-        return {"warned": [], "emergency_active": None, "initialized": False}
+        return {
+            "warned": [],
+            "emergency_active": None,
+            "initialized": False,
+            "last_update_id": 0,
+        }
 
 
 def save_state(state):
@@ -91,7 +102,6 @@ def has_current_outage(entry):
 
 
 def slot_is_outage(status):
-    # The client documents YES as no outage, NO/FIRST/SECOND as outage statuses.
     value = getattr(status, "value", status)
     value = str(value).upper()
     if value in {"NO", "FIRST", "SECOND", "MFIRST", "MSECOND"}:
@@ -122,9 +132,8 @@ def slot_start(key, now):
 
 
 def get_slots_for_today(client):
-    # The package resolves the address/group internally and returns a mapping
-    # of time-slot keys to SlotStatus values.
     return client.get_today_schedule(CITY, STREET, HOUSE_NUMBER)
+
 
 def get_outage_intervals(slots, now):
     """Объединяет последовательные 30-минутные интервалы отключения."""
@@ -150,6 +159,7 @@ def get_outage_intervals(slots, now):
 async def send_message(bot, chat_id, text):
     await bot.send_message(chat_id=chat_id, text=text)
 
+
 async def process_status_commands(bot, chat_id, state, current, intervals, now):
     updates = await bot.get_updates(
         offset=state.get("last_update_id", 0) + 1,
@@ -164,7 +174,12 @@ async def process_status_commands(bot, chat_id, state, current, intervals, now):
         if message is None or str(message.chat_id) != str(chat_id):
             continue
 
-        command = (message.text or "").strip().split(maxsplit=1)[0].lower() if message.text else ""
+        command = (
+            (message.text or "").strip().split(maxsplit=1)[0].lower()
+            if message.text
+            else ""
+        )
+
         if command.split("@", 1)[0] != "/status":
             continue
 
@@ -207,6 +222,8 @@ async def process_status_commands(bot, chat_id, state, current, intervals, now):
             f"{current_text}\n\n{schedule_text}\n\n"
             "Данные предоставлены ДТЭК и могут обновляться.",
         )
+
+
 async def run():
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
@@ -253,13 +270,13 @@ async def run():
             session=session,
         ) as client:
 
-            # Получаем все номера домов по улице из ДТЭК.
             response = await client.get_home_num(CITY, STREET)
 
             log.info(
                 "ДТЭК: варианты номеров домов, начинающихся на 20: %s",
                 [h for h in response.houses if normalize(h).startswith("20")]
             )
+
             house_key, entry = find_house_entry(response)
 
             if entry is None:
@@ -284,8 +301,8 @@ async def run():
                     "Проверьте адрес/корпус/очередь."
                 )
 
-            # Emergency/restoration messages only on an explicit boolean state.
             log.info("ДТЭК: текущее аварийное состояние: %s", current)
+
             slots = await get_slots_for_today(client)
             previous = state.get("emergency_active")
 
@@ -310,19 +327,29 @@ async def run():
                 state["emergency_active"] = False
 
             elif current is not None and previous is None:
-                # Baseline only: do not send a false "restored" alert on first run.
                 state["emergency_active"] = current
 
-            log.info("ДТЭК: получено слотов расписания: %s", len(slots) if slots else 0)
+            log.info(
+                "ДТЭК: получено слотов расписания: %s",
+                len(slots) if slots else 0,
+            )
             log.info(
                 "ДТЭК: расписание: %s",
                 {str(k): str(getattr(v, "value", v)) for k, v in (slots or {}).items()}
             )
-intervals = get_outage_intervals(slots, now) if slots else []
-await process_status_commands(bot, chat_id, state, current, intervals, now)
-            if slots:
-                intervals = get_outage_intervals(slots, now)
 
+            intervals = get_outage_intervals(slots, now) if slots else []
+
+            await process_status_commands(
+                bot,
+                chat_id,
+                state,
+                current,
+                intervals,
+                now,
+            )
+
+            if slots:
                 for start, end in intervals:
                     minutes = (start - now).total_seconds() / 60
                     event_id = f"{start.isoformat()}|{EXPECTED_GROUP}"
@@ -339,7 +366,6 @@ await process_status_commands(bot, chat_id, state, current, intervals, now)
                         )
                         state["warned"].append(event_id)
 
-            # Keep state bounded to the recent past/future.
             cutoff = now - timedelta(days=2)
             kept = []
 
