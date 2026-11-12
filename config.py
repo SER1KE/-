@@ -1,6 +1,6 @@
 CITY = "м. Одеса"
 STREET = "вул. Щоглова"
-HOUSE_NUMBER = "20"
+HOUSE_NUMBER = "20/корп.1"
 EXPECTED_GROUP = "2.1"
 WARNING_MINUTES = 60
 TIMEZONE = "Europe/Kyiv"
