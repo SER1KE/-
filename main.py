@@ -207,7 +207,7 @@ async def run():
                 )
 
             # Emergency/restoration messages only on an explicit boolean state.
-            current = has_current_outage(entry)
+            log.info("ДТЭК: текущее аварийное состояние: %s", current)
             previous = state.get("emergency_active")
 
             if current is True and previous is not True:
@@ -234,7 +234,11 @@ async def run():
                 # Baseline only: do not send a false "restored" alert on first run.
                 state["emergency_active"] = current
 
-            slots = await get_slots_for_today(client)
+            log.info("ДТЭК: получено слотов расписания: %s", len(slots) if slots else 0)
+log.info(
+    "ДТЭК: расписание: %s",
+    {str(k): str(getattr(v, "value", v)) for k, v in (slots or {}).items()}
+)
 
             if slots:
                 for key, status in slots.items():
