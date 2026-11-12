@@ -134,7 +134,30 @@ async def run():
     now = datetime.now(TZ)
     bot = Bot(token=token)
 
-    async with DtekClient("oem") as client:
+        log.info("Получаю браузерную сессию ДТЭК")
+    cookies, csrf_token = await get_cleared_cookies(SCHEDULE_URL)
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Accept-Language": "uk,en-US;q=0.9,en;q=0.8",
+        "Origin": BASE_URL,
+        "Referer": SCHEDULE_URL,
+        "X-Requested-With": "XMLHttpRequest",
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+    }
+
+    if csrf_token:
+        headers["X-CSRF-Token"] = csrf_token
+
+    session = AsyncSession(
+        timeout=20.0,
+        headers=headers,
+        cookies=cookies,
+        impersonate="chrome120",
+    )
+
+        async with DtekClient("oem", ajax_url=AJAX_URL, session=session) as client:
         # Read all houses for the street so we can inspect the house's live flag.
         response = await client.get_home_num(CITY, STREET)
         house_key, entry = find_house_entry(response)
