@@ -9,6 +9,8 @@ from zoneinfo import ZoneInfo
 
 from telegram import Bot
 from dtek_client import DtekClient
+from dtek_client.browser_auth import get_cleared_cookies
+from curl_cffi.requests import AsyncSession
 
 from config import CITY, STREET, HOUSE_NUMBER, EXPECTED_GROUP, WARNING_MINUTES, TIMEZONE
 
@@ -16,7 +18,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger("dtek-notifier")
 
 STATE_PATH = Path("state.json")
-TZ = ZoneInfo(TIMEZONE)
+BASE_URL = "https://www.dtek-oem.com.ua"
+SCHEDULE_URL = f"{BASE_URL}/ua/shutdowns"
+AJAX_URL = f"{BASE_URL}/ua/ajax"
 
 
 def load_state():
