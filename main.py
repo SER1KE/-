@@ -176,11 +176,13 @@ async def run():
             session=session,
         ) as client:
 
-            # Read all houses for the street so we can inspect the house's live flag.
+            # Получаем все номера домов по улице из ДТЭК.
+            response = await client.get_home_num(CITY, STREET)
+
             log.info(
-    "ДТЭК: варианты номеров домов, начинающихся на 20: %s",
-    [h for h in response.houses if normalize(h).startswith("20")]
-)
+                "ДТЭК: варианты номеров домов, начинающихся на 20: %s",
+                [h for h in response.houses if normalize(h).startswith("20")]
+            )
             house_key, entry = find_house_entry(response)
 
             if entry is None:
