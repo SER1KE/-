@@ -1,0 +1,2 @@
+dtek-blackout-client==0.1.12
+python-telegram-bot==21.10
