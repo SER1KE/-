@@ -27,12 +27,13 @@ AJAX_URL = f"{BASE_URL}/ua/ajax"
 
 def load_state():
     if not STATE_PATH.exists():
-        return {"warned": [], "emergency_active": None, "initialized": False}
+        return {"warned": [], "emergency_active": None, "initialized": False, "last_update_id": 0}
     try:
         data = json.loads(STATE_PATH.read_text(encoding="utf-8"))
         data.setdefault("warned", [])
         data.setdefault("emergency_active", None)
         data.setdefault("initialized", False)
+        data.setdefault("last_update_id", 0)
         return data
     except (OSError, json.JSONDecodeError):
         log.exception("Не удалось прочитать state.json; создаю новое состояние")
@@ -149,7 +150,63 @@ def get_outage_intervals(slots, now):
 async def send_message(bot, chat_id, text):
     await bot.send_message(chat_id=chat_id, text=text)
 
+async def process_status_commands(bot, chat_id, state, current, intervals, now):
+    updates = await bot.get_updates(
+        offset=state.get("last_update_id", 0) + 1,
+        timeout=0,
+        allowed_updates=["message"],
+    )
 
+    for update in updates:
+        state["last_update_id"] = update.update_id
+        message = update.effective_message
+
+        if message is None or str(message.chat_id) != str(chat_id):
+            continue
+
+        command = (message.text or "").strip().split(maxsplit=1)[0].lower() if message.text else ""
+        if command.split("@", 1)[0] != "/status":
+            continue
+
+        if current is True:
+            current_text = "🔴 ДТЭК показывает активное отключение электричества."
+        elif current is False:
+            current_text = "🟢 ДТЭК не показывает активное отключение электричества."
+        else:
+            current_text = "❔ Не удалось определить текущее состояние."
+
+        active_interval = next(
+            ((start, end) for start, end in intervals if start <= now < end),
+            None,
+        )
+        next_interval = next(
+            ((start, end) for start, end in intervals if start > now),
+            None,
+        )
+
+        if active_interval:
+            schedule_text = (
+                "По графику сейчас период отключения.\n"
+                f"🟢 Ориентировочное включение: {active_interval[1]:%H:%M}"
+            )
+        elif next_interval:
+            schedule_text = (
+                f"Следующее плановое отключение: {next_interval[0]:%H:%M}.\n"
+                f"🟢 Ориентировочное включение: {next_interval[1]:%H:%M}"
+            )
+        else:
+            schedule_text = "По полученному графику следующих отключений сегодня нет."
+
+        await send_message(
+            bot,
+            chat_id,
+            "📊 Текущее состояние электроэнергии\n"
+            "Адрес: Одесса, Щоглова, 20/1\n"
+            f"Очередь: {EXPECTED_GROUP}\n"
+            f"Проверено: {now:%d.%m.%Y %H:%M}\n\n"
+            f"{current_text}\n\n{schedule_text}\n\n"
+            "Данные предоставлены ДТЭК и могут обновляться.",
+        )
 async def run():
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
@@ -261,7 +318,8 @@ async def run():
                 "ДТЭК: расписание: %s",
                 {str(k): str(getattr(v, "value", v)) for k, v in (slots or {}).items()}
             )
-
+intervals = get_outage_intervals(slots, now) if slots else []
+await process_status_commands(bot, chat_id, state, current, intervals, now)
             if slots:
                 intervals = get_outage_intervals(slots, now)
 
