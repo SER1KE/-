@@ -4,7 +4,7 @@ name: DTEK Telegram notifier
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "1-56/5 * * * *"
 
 permissions:
   contents: write
