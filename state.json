@@ -1,7 +1,5 @@
 {
-  "warned": [
-    "2026-11-14T03:30:00+02:00|2.1"
-  ],
+  "warned": [],
   "emergency_active": false,
   "initialized": true,
   "last_update_id": 722119670
