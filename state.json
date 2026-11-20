@@ -2,7 +2,7 @@
   "warned": [
     "2026-11-19T11:30:00+02:00|2.1"
   ],
-  "emergency_active": false,
+  "emergency_active": true,
   "initialized": true,
   "last_update_id": 722119672
 }
