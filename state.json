@@ -6,7 +6,7 @@
     "2026-11-28T04:30:00+02:00|2.1",
     "2026-11-28T08:00:00+02:00|2.1"
   ],
-  "emergency_active": true,
+  "emergency_active": false,
   "initialized": true,
   "last_update_id": 722119677
 }
